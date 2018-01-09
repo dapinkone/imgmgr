@@ -1,0 +1,21 @@
+[[source]]
+
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+
+[packages]
+
+pillow = "*"
+dhash = "*"
+
+
+[dev-packages]
+
+rope = "*"
+jedi = "*"
+"autopep8" = "*"
+"flake8" = "*"
+elpy = "*"
+"rope-py3k" = "*"
