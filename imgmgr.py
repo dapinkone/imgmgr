@@ -3,15 +3,20 @@
 # renames files to contain previous folder name as part of filename.
 # so as not to lose tags/information in the process.
 ###
+# Completed:
+#  * Duplicate detection
 # TODO:
-#  *auto-tagging
-#  *duplicate detection
-#  *walk the dir yourself, instead of using find . |
+#  * auto-tagging
+#  * walk the dir yourself, instead of using find . |
 #     would be much more efficient.
+#  * auto-move duplicates to ./duplicates
+#  * consolidation of file names prior to move/deletion of dups?
+#
 from PIL import Image
 import os
 import sys
 import shutil
+import concurrent.futures
 import dhash
 dhash.force_pil()  # force use PIL, not wand/imagemagick
 
@@ -21,19 +26,22 @@ def get_img_res(filepath=None):
     return(img.size)
 
 
-def getdhash(filename):
+def get_dhash(filename):
     # given a filename, return the dhash of the image
     with Image.open(filename) as img:
         # adjust size for senstivity. greater size==more senstivity
-        return(dhash.dhash_int(img, size=8))
+        # results of testing for dups on my collection:
+        # 215 detected @ s=8; 160@16; 160@32;
+        img_dhash = dhash.dhash_int(img, size=16)
+        return(img_dhash)
+
+
+def filter_dirs(filelisting):
+    return {x for x in filelisting if not os.path.isdir(x)}
 
 
 def sort_by_ratio(filelisting):
     for filepath in filelisting:
-        filepath = filepath.strip()
-        if os.path.isdir(filepath):
-            continue
-
         try:
             res = get_img_res(filepath)
         except OSError:
@@ -84,33 +92,54 @@ def sort_by_ratio(filelisting):
 
 def detect_dups(filelisting):
     # detect duplicates given a filelisting
-    img_lookup = dict()
+    hash_to_img = dict()
+    img_to_hash = dict()
     dup_queue = set()  # record of dups for deletion
 
-    for filename in filelisting:
-        filename = filename.strip()
-        if os.path.isdir(filename):
-            continue
+    # filter directories out
+    filelisting = filter_dirs(filelisting)
 
-        img_dhash = getdhash(filename)
-        res = get_img_res(filename)
+    # thread out, get all the heavy image processing done at once
+    with concurrent.futures.ThreadPoolExecutor(max_workers=25) as executor:
+        futures_to_data = {
+            executor.submit(get_dhash, filename): filename
+            for filename in filelisting
+        }
+        for future in concurrent.futures.as_completed(futures_to_data):
+            filename = futures_to_data[future]
+            try:
+                img_dhash = future.result()
+                img_to_hash[filename] = img_dhash
+            except Exception as exc:
+                print('Exception: {}'.format(exc))
 
-        if img_dhash not in img_lookup.keys():
-            img_lookup[img_dhash] = filename
+    for filename, img_dhash in img_to_hash.items():
+        if img_dhash not in hash_to_img.keys():
+            hash_to_img[img_dhash] = filename
         else:
             # we found a duplicate; we want to keep the one which
             # is of higher resolution, so do a comparison.
-            other = img_lookup[img_dhash]
-            other_res = get_img_res(img_lookup[img_dhash])
-            print('Dup: {} vs {}'.format(filename, other))
+            dup = None
+
+            res = get_img_res(filename)
+            other = hash_to_img[img_dhash]
+            other_res = get_img_res(hash_to_img[img_dhash])
+
             if other_res >= res:
-                dup_queue.add(filename)
+                dup = filename
             else:
-                dup_queue.add(other)
-                img_lookup[img_dhash] = filename
+                dup = other
+                hash_to_img[img_dhash] = filename
+
+            print('Dup: ' + dup)
+            dup_queue.add(dup)
+    print(len(dup_queue), ' Duplicates detected.')
+    return dup_queue
 
 
 if __name__ == '__main__':
-    filelisting = set(sys.stdin)
-    detect_dups(filelisting)
+    filelisting = (line.strip() for line in sys.stdin)
+    if not os.path.exists('./duplicates'):
+        os.mkdir('./duplicates')
+    dups = detect_dups(filelisting)
     # sort_by_ratio(filelisting)
