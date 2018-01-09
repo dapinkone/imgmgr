@@ -16,19 +16,26 @@ import dhash
 dhash.force_pil()  # force use PIL, not wand/imagemagick
 
 
-def getimgres(filepath=None):
+def get_img_res(filepath=None):
     img = Image.open(filepath)
     return(img.size)
 
 
-def sortbyratio(filelisting):
+def getdhash(filename):
+    # given a filename, return the dhash of the image
+    with Image.open(filename) as img:
+        # adjust size for senstivity. greater size==more senstivity
+        return(dhash.dhash_int(img, size=8))
+
+
+def sort_by_ratio(filelisting):
     for filepath in filelisting:
         filepath = filepath.strip()
         if os.path.isdir(filepath):
             continue
 
         try:
-            res = getimgres(filepath)
+            res = get_img_res(filepath)
         except OSError:
             print(filepath + ' unknown filetype.', file=sys.stderr)
             continue
@@ -58,14 +65,15 @@ def sortbyratio(filelisting):
             raise('OSError', desired_dir + ' is not a directory.')
 
         try:
-            if desired_dir in pathdata:
-                # print(filepath + ' already sorted. Skipping...')
-                pass
-            else:
+            if desired_dir not in pathdata:
                 print('copying {} to {}'.format(filepath, cp_dest))
                 shutil.copy2(filepath, cp_dest)
-                # if success, perhaps os.unlink()?
-                # better leave that to user for safety, for now.
+                if os.path.exists(cp_dest):  # success?
+                    pass
+                    # if success, perhaps os.unlink()?
+                    # or perhaps move/compress?
+                    # better leave that to user for safety, for now.
+
         except shutil.SameFileError:
             print(filepath + ' already exists. Continuing...')
             continue
@@ -74,5 +82,35 @@ def sortbyratio(filelisting):
             continue
 
 
+def detect_dups(filelisting):
+    # detect duplicates given a filelisting
+    img_lookup = dict()
+    dup_queue = set()  # record of dups for deletion
+
+    for filename in filelisting:
+        filename = filename.strip()
+        if os.path.isdir(filename):
+            continue
+
+        img_dhash = getdhash(filename)
+        res = get_img_res(filename)
+
+        if img_dhash not in img_lookup.keys():
+            img_lookup[img_dhash] = filename
+        else:
+            # we found a duplicate; we want to keep the one which
+            # is of higher resolution, so do a comparison.
+            other = img_lookup[img_dhash]
+            other_res = get_img_res(img_lookup[img_dhash])
+            print('Dup: {} vs {}'.format(filename, other))
+            if other_res >= res:
+                dup_queue.add(filename)
+            else:
+                dup_queue.add(other)
+                img_lookup[img_dhash] = filename
+
+
 if __name__ == '__main__':
-    sortbyratio(sys.stdin)
+    filelisting = set(sys.stdin)
+    detect_dups(filelisting)
+    # sort_by_ratio(filelisting)
