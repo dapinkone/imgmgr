@@ -12,6 +12,8 @@ from PIL import Image
 import os
 import sys
 import shutil
+import dhash
+dhash.force_pil()  # force use PIL, not wand/imagemagick
 
 
 def getimgres(filepath=None):
@@ -19,8 +21,8 @@ def getimgres(filepath=None):
     return(img.size)
 
 
-if __name__ == '__main__':
-    for filepath in sys.stdin:
+def sortbyratio(filelisting):
+    for filepath in filelisting:
         filepath = filepath.strip()
         if os.path.isdir(filepath):
             continue
@@ -42,7 +44,7 @@ if __name__ == '__main__':
         # in into the new file name, so we don't lose information
         # during the sort if they had any kind of sort prior.
         pathdata = filepath.split(os.path.sep)
-        if len(pathdata) > 2:
+        if len(pathdata) > 2 and ('aspect ratio' not in filepath):
             desired_name = '_'.join(pathdata[1:])
         else:
             desired_name = pathdata[-1]
@@ -62,9 +64,15 @@ if __name__ == '__main__':
             else:
                 print('copying {} to {}'.format(filepath, cp_dest))
                 shutil.copy2(filepath, cp_dest)
+                # if success, perhaps os.unlink()?
+                # better leave that to user for safety, for now.
         except shutil.SameFileError:
             print(filepath + ' already exists. Continuing...')
             continue
         except PermissionError as e:
             print(filepath + e, file=sys.stderr)
             continue
+
+
+if __name__ == '__main__':
+    sortbyratio(sys.stdin)
