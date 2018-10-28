@@ -13,9 +13,7 @@ dhash = "*"
 
 [dev-packages]
 
-rope = "*"
 jedi = "*"
 "autopep8" = "*"
 "flake8" = "*"
 elpy = "*"
-"rope-py3k" = "*"
